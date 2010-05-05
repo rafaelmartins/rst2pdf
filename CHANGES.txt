@@ -1,6 +1,15 @@
 New in SVN
 ----------
 
+* Fixed Issue 315: crash when using an undefined class for 
+  a list.
+* Implemented Issue 279: images can be specified as URLs.
+* Fixed Issue 313: new --fit-background-mode option.
+* Fixed Issue 110: new --real-footnotes option.
+* Fixed Issue 176: spacers larger than a page don't crash.
+* Fixed Issue 65: References to Helvetica/Times when it was not used.
+* Fixed Issue 310: added option linenos_offset to code blocks.
+* Fixed Issue 309: style for blockquotes was not respected.
 * Custom cover page support (related to Issue 157)
 * Fixed Issue 305: support wildcards in image names
   and then use the best one available.

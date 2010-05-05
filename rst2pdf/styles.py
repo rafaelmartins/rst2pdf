@@ -23,6 +23,7 @@ from reportlab.lib.styles import *
 from reportlab.lib.enums import *
 from reportlab.pdfbase import pdfmetrics
 import reportlab.lib.pagesizes as pagesizes
+import reportlab.rl_config
 
 from rst2pdf.rson import loads as rson_loads
 
@@ -372,6 +373,7 @@ class StyleSheet(object):
                             log.error("Unknown font: \"%s\","
                                       "replacing with Helvetica", style[key])
                             style[key] = "Helvetica"
+                            
         #log.info('FontList: %s'%self.embedded)
         #log.info('FontAlias: %s'%self.fontsAlias)
         # Get styles from all stylesheets in order
@@ -492,6 +494,11 @@ class StyleSheet(object):
 
             self.StyleSheet.add(ParagraphStyle(**s))
         self.emsize=self['base'].fontSize
+        # Make stdFont the basefont, for Issue 65
+        reportlab.rl_config.canvas_basefontname = self['base'].fontName
+        # Make stdFont the default font for table cell styles (Issue 65)
+        reportlab.platypus.tables.CellStyle1.fontname=self['base'].fontName
+        
 
     def __getitem__(self, key):
         if self.StyleSheet.has_key(key):

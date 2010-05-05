@@ -74,6 +74,7 @@ from reportlab.pdfbase.pdfdoc import PDFPageLabel
 #from reportlab.lib.pagesizes import *
 
 from flowables import * # our own reportlab flowables
+from sinker import Sinker
 import flowables
 from image import MyImage
 
@@ -90,7 +91,7 @@ from roman import toRoman
 # Small template engine for covers
 # The obvious import doesn't work for complicated reasons ;-)
 import tenjin
-to_str=tenjin.helpers.to_str
+to_str=tenjin.helpers.generate_tostrfunc('utf-8')
 escape=tenjin.helpers.escape
 templateEngine=tenjin.Engine()
 
@@ -135,12 +136,14 @@ class RstToPdf(object):
                  font_path=[],
                  style_path=[],
                  fit_mode='shrink',
+                 background_fit_mode='center',
                  sphinx=False,
                  smarty='0',
                  baseurl=None,
                  repeat_table_rows=False,
                  footnote_backlinks=True,
                  inline_footnotes=False,
+                 real_footnotes=False,
                  def_dpi=300,
                  show_frame=False,
                  highlightlang='python', #This one is only used by sphinx
@@ -184,12 +187,17 @@ class RstToPdf(object):
         self.inlinelinks = inlinelinks
         self.breaklevel = breaklevel
         self.fit_mode = fit_mode
+        self.background_fit_mode = background_fit_mode
         self.to_unlink = []
         self.smarty = smarty
         self.baseurl = baseurl
         self.repeat_table_rows = repeat_table_rows
         self.footnote_backlinks = footnote_backlinks
         self.inline_footnotes = inline_footnotes
+        self.real_footnotes = real_footnotes
+        # Real footnotes are always a two-pass thing.
+        if self.real_footnotes:
+            self.mustMultiBuild = True
         self.def_dpi = def_dpi
         self.show_frame = show_frame
         self.img_dir = os.path.join(self.PATH, 'images')
@@ -208,6 +216,8 @@ class RstToPdf(object):
             directives.register_directive('code-block', pygments_code_block_directive.code_block_directive)
             import math_directive
             self.gen_pdftext, self.gen_elements = nodehandlers(self)
+
+        self.sphinx = sphinx
 
         if not self.styles.languages:
             self.styles.languages=[]
@@ -500,7 +510,7 @@ class RstToPdf(object):
             self.doctree = doctree
 
         elements = self.gen_elements(self.doctree)
-
+        
         # Find cover template, save it in cover_file
         def find_cover(name):
             cover_path=[self.basedir, os.path.expanduser('~/.rst2pdf'),
@@ -523,10 +533,13 @@ class RstToPdf(object):
                             subtitle=self.doc_subtitle
                         )
 
-        self.cover_tree = docutils.core.publish_doctree(cover_text,
-                    source_path=source_path)
+        # This crashes sphinx because .. class:: in sphinx is
+        # something else. Ergo, pdfbuilder does it in its own way.
+        if not self.sphinx:
+            self.cover_tree = docutils.core.publish_doctree(cover_text,
+                        source_path=source_path)
 
-        elements = self.gen_elements(self.cover_tree) + elements
+            elements = self.gen_elements(self.cover_tree) + elements
 
         if self.blank_first_page:
             elements.insert(0,PageBreak())
@@ -534,7 +547,7 @@ class RstToPdf(object):
         # Put the endnotes at the end ;-)
         endnotes = self.decoration['endnotes']
         if endnotes:
-            elements.append(Spacer(1, 2*cm))
+            elements.append(MySpacer(1, 2*cm))
             elements.append(Separation())
             for n in self.decoration['endnotes']:
                 t_style = TableStyle(self.styles['endnote'].commands)
@@ -560,17 +573,56 @@ class RstToPdf(object):
             title=self.doc_title_clean,
             author=self.doc_author,
             pageCompression=compressed)
+
+        if getattr(self, 'mustMultiBuild', False):
+            # Force a multibuild pass
+            if not isinstance(elements[-1],UnhappyOnce):
+                log.info ('Forcing second pass so Total pages work')
+                elements.append(UnhappyOnce())
         while True:
             try:
                 log.info("Starting build")
-                pdfdoc.multiBuild(elements)
-                #from pudb import set_trace; set_trace()
                 # See if this *must* be multipass
+                pdfdoc.multiBuild(elements)
+                # Force a multibuild pass
+
+                # FIXME: since mustMultiBuild is set by the
+                # first pass in the case of ###Total###, then we
+                # make a new forced two-pass build. This is broken.
+                # conceptually.
+                
                 if getattr(self, 'mustMultiBuild', False):
+                    # Force a multibuild pass
                     if not isinstance(elements[-1],UnhappyOnce):
                         log.info ('Forcing second pass so Total pages work')
                         elements.append(UnhappyOnce())
                         continue
+                ## Rearrange footnotes if needed
+                if self.real_footnotes:
+                    newStory=[]
+                    fnPile=[]
+                    for e in elements:
+                        if getattr(e,'isFootnote',False):
+                            # Add it to the pile
+                            #if not isinstance (e, MySpacer):
+                            fnPile.append(e)
+                        elif getattr(e, '_atTop', False) or \
+                            isinstance (e, (UnhappyOnce, MyPageBreak)):
+                            if fnPile:
+                                newStory.append(Sinker(fnPile))
+                            newStory.append(e)
+                            fnPile=[]
+                        else:
+                            newStory.append(e)
+                    elements = newStory+fnPile
+                    for e in elements:
+                        if hasattr(e, '_postponed'):
+                            delattr(e,'_postponed')
+                    self.real_footnotes = False
+                    continue
+
+
+                
                 break
             except ValueError, v:
                 # FIXME: cross-document links come through here, which means
@@ -584,6 +636,7 @@ class RstToPdf(object):
                             delattr(e,'_postponed')
                 else:
                     raise
+
         #doc = SimpleDocTemplate("phello.pdf")
         #doc.build(elements)
         for fn in self.to_unlink:
@@ -593,73 +646,9 @@ class RstToPdf(object):
                 pass
 
 
+from reportlab.platypus import doctemplate
+
 class FancyDocTemplate(BaseDocTemplate):
-
-    #def multiBuild(self, story,
-                   #filename=None,
-                   #canvasmaker=canvas.Canvas,
-                   #maxPasses = 10):
-        #"""Makes multiple passes until all indexing flowables
-        #are happy."""
-
-        #self._indexingFlowables = []
-        ##scan the story and keep a copy
-        #for thing in story:
-            #if thing.isIndexing():
-                #self._indexingFlowables.append(thing)
-
-        ##better fix for filename is a 'file' problem
-        #self._doSave = 0
-        #passes = 0
-        #mbe = []
-        #self._multiBuildEdits = mbe.append
-        #while 1:
-            #s=story[-202].style
-            #for n in dir(s):
-                #if not n.startswith('_'):
-                    #print n,eval('s.parent.%s'%n)
-            #print '----------------------'
-            #passes += 1
-            #log.info('Pass number %d'%passes)
-
-            #for fl in self._indexingFlowables:
-                #fl.beforeBuild()
-
-            ## work with a copy of the story, since it is consumed
-            #tempStory = story[:]
-            #self.build(tempStory, filename, canvasmaker)
-            ##self.notify('debug',None)
-
-            #for fl in self._indexingFlowables:
-                #fl.afterBuild()
-
-            #happy = self._allSatisfied()
-
-            #if happy:
-                #self._doSave = 0
-                #self.canv.save()
-                #break
-            #else:
-                #self.canv.save()
-                #f=open('pass-%d.pdf'%passes,'wb')
-                #f.seek(0)
-                #f.truncate()
-                #f.write(self.filename.getvalue())
-                #self.filename = StringIO()
-            #if passes > maxPasses:
-                ## Don't fail, just say that the indexes may be wrong
-                #log.error("Index entries not resolved after %d passes" % maxPasses)
-                #break
-
-
-            ##work through any edits
-            #while mbe:
-                #e = mbe.pop(0)
-                #e[0](*e[1:])
-
-        #del self._multiBuildEdits
-        #if verbose: print 'saved'
-
 
     def afterFlowable(self, flowable):
 
@@ -670,6 +659,77 @@ class FancyDocTemplate(BaseDocTemplate):
             node = flowable.node  
             pagenum = setPageCounter()
             self.notify('TOCEntry', (level, text, pagenum, parent_id, node))
+
+
+    def handle_flowable(self,flowables):
+        '''try to handle one flowable from the front of list flowables.'''
+
+        # this method is copied from reportlab
+
+        #allow document a chance to look at, modify or ignore
+        #the object(s) about to be processed
+        self.filterFlowables(flowables)
+
+        self.handle_breakBefore(flowables)
+        self.handle_keepWithNext(flowables)
+        f = flowables[0]
+        del flowables[0]
+        if f is None:
+            return
+
+        if isinstance(f,PageBreak):
+            if isinstance(f,SlowPageBreak):
+                self.handle_pageBreak(slow=1)
+            else:
+                self.handle_pageBreak()
+            self.afterFlowable(f)
+        elif isinstance(f,ActionFlowable):
+            f.apply(self)
+            self.afterFlowable(f)
+        else:
+            frame = self.frame
+            canv = self.canv
+            #try to fit it then draw it
+            if frame.add(f, canv, trySplit=self.allowSplitting):
+                if not isinstance(f,FrameActionFlowable):
+                    self._curPageFlowableCount += 1
+                    self.afterFlowable(f)
+                doctemplate._addGeneratedContent(flowables,frame)
+            else:
+                if self.allowSplitting:
+                    # see if this is a splittable thing
+                    S = frame.split(f,canv)
+                    n = len(S)
+                else:
+                    n = 0
+                if n:
+                    if not isinstance(S[0],(PageBreak,SlowPageBreak,ActionFlowable)):
+                        if frame.add(S[0], canv, trySplit=0):
+                            self._curPageFlowableCount += 1
+                            self.afterFlowable(S[0])
+                            doctemplate._addGeneratedContent(flowables,frame)
+                        else:
+                            ident = "Splitting error(n==%d) on page %d in\n%s" % (n,self.page,self._fIdent(f,60,frame))
+                            #leave to keep apart from the raise
+                            raise LayoutError(ident)
+                        del S[0]
+                    for i,f in enumerate(S):
+                        flowables.insert(i,f)   # put split flowables back on the list
+                else:
+                    if hasattr(f,'_postponed'):
+                        ident = "Flowable %s%s too large on page %d in frame %r%s of template %r" % \
+                                (self._fIdent(f,60,frame),doctemplate._fSizeString(f),self.page, self.frame.id,
+                                        self.frame._aSpaceString(), self.pageTemplate.id)
+                        #leave to keep apart from the raise
+                        raise LayoutError(ident)
+                    # this ought to be cleared when they are finally drawn!
+                    f._postponed = 1
+                    mbe = getattr(self,'_multiBuildEdits',None)
+                    if mbe:
+                        mbe((delattr,f,'_postponed'))
+                    flowables.insert(0,f)           # put the flowable back
+                    self.handle_frameEnd()
+
 
 _counter=0
 _counterStyle='arabic'
@@ -724,9 +784,7 @@ class UnhappyOnce(IndexingFlowable):
     def isSatisfied(self):
         if self._unhappy:
             self._unhappy= False
-            print 'UNHAPPY'
             return False
-        print 'HAPPY'
         return True
         
     def draw(self):
@@ -849,8 +907,8 @@ class FancyPage(PageTemplate):
             Calculates the image one time, and caches
             it for reuse on every page in the template.
 
-            Currently, reduces the image to fit on the page
-            and then centers it on the page.
+            How the background is drawn depends on the
+            --fit-background-mode option.
 
             If desired, we could add code to push it around
             on the page, using stylesheets to align and/or
@@ -865,16 +923,26 @@ class FancyPage(PageTemplate):
                 log.error("Missing %s image file: %s", which, uri)
                 return
             try:
-                w, h, kind = MyImage.size_for_node(dict(uri=uri), self.client)
+                w, h, kind = MyImage.size_for_node(dict(uri=uri, ), self.client)
             except ValueError: 
                 # Broken image, return arbitrary stuff
                 uri=missing
                 w, h, kind = 100, 100, 'direct'
                 
             pw, ph = self.styles.pw, self.styles.ph
-            scale = min(1.0, 1.0 * pw / w, 1.0 * ph / h)
-            sw, sh = w * scale, h * scale
-            x, y = (pw - sw) / 2.0, (ph - sh) / 2.0
+            if self.client.background_fit_mode == 'center':
+                scale = min(1.0, 1.0 * pw / w, 1.0 * ph / h)
+                sw, sh = w * scale, h * scale
+                x, y = (pw - sw) / 2.0, (ph - sh) / 2.0
+            elif self.client.background_fit_mode == 'scale':
+                x, y = 0, 0
+                sw, sh = pw, ph
+            else:
+                log.error('Unknown background fit mode: %s'% self.client.background_fit_mode)
+                # Do scale anyway
+                x, y = 0, 0
+                sw, sh = pw, ph
+                
             bg = MyImage(uri, sw, sh, client=self.client)
             self.image_cache[uri] = info = bg, x, y
         bg, x, y = info
@@ -1013,7 +1081,7 @@ def parse_commandline():
         help='A list of folders to search for fonts,'\
              ' separated using "%s". Default="%s"'%(os.pathsep, def_fontpath))
 
-    def_baseurl = urlunparse(['file',os.getcwd(),'','','',''])
+    def_baseurl = urlunparse(['file',os.getcwd()+os.sep,'','','',''])
     parser.add_option('--baseurl', dest='baseurl', metavar='URL',
         default=def_baseurl,
         help='The base URL for relative URLs. Default="%s"'%def_baseurl)
@@ -1048,6 +1116,13 @@ def parse_commandline():
         default=def_fit, dest='fit_mode',
         help='What todo when a literal is too wide. One of error,'\
         ' overflow,shrink,truncate. Default="%s"'%def_fit)
+
+    def_fit_background = config.getValue("general", "background_fit_mode",
+    "center")
+    parser.add_option('--fit-background-mode', metavar='MODE',
+        default=def_fit_background, dest='background_fit_mode',
+        help='How to fit the background image to the page.'\
+        ' One of stretch or center. Default="%s"'%def_fit_background)
 
     parser.add_option('--inline-links', action="store_true",
     dest='inlinelinks', default=False,
@@ -1086,6 +1161,13 @@ def parse_commandline():
         dest='inline_footnotes', default=def_inline_footnotes,
         help='Show footnotes inline.'\
         ' Default=%s' % str(not def_inline_footnotes))
+
+    def_real_footnotes = config.getValue("general",
+        "real_footnotes", False)
+    parser.add_option('--real-footnotes', action='store_true',
+        dest='real_footnotes', default=def_real_footnotes,
+        help='Show footnotes at the bottom of the page where they are defined.'\
+        ' Default=%s' % str(not def_real_footnotes))
 
     def_dpi = config.getValue("general", "default_dpi", 300)
     parser.add_option('--default-dpi', dest='def_dpi', metavar='NUMBER',
@@ -1232,6 +1314,9 @@ def main(args=None):
         spath = options.stylepath.split(os.pathsep)
     options.stylepath = spath
 
+    if options.real_footnotes:
+        options.inline_footnotes = True
+
     if reportlab.Version < '2.3':
         log.warning('You are using Reportlab version %s.'\
             ' The suggested version '\
@@ -1251,12 +1336,14 @@ def main(args=None):
         breaklevel=int(options.breaklevel),
         baseurl=options.baseurl,
         fit_mode=options.fit_mode,
+        background_fit_mode = options.background_fit_mode,
         smarty=str(options.smarty),
         font_path=options.fpath,
         style_path=options.stylepath,
         repeat_table_rows=options.repeattablerows,
         footnote_backlinks=options.footnote_backlinks,
         inline_footnotes=options.inline_footnotes,
+        real_footnotes=options.real_footnotes,
         def_dpi=int(options.def_dpi),
         basedir=options.basedir,
         show_frame=options.show_frame,

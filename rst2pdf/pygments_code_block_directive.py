@@ -135,10 +135,11 @@ def code_block_directive(name, arguments, options, content, lineno,
     """Parse and classify content of a code_block."""
     if 'include' in options:
         try:
-            content = codecs.open(options['include'], 'r', 'utf-8').read()
+            content = codecs.open(options['include'], 'r', 'utf-8').read().rstrip()
         except (IOError, UnicodeError): # no file or problem finding it or reading it
             log.error('Error reading file: "%s" L %s' % (options['include'], lineno))
             content = u''
+        line_offset = 0
         if content:
             # here we define the start-at and end-at options
             # so that limit is included in extraction
@@ -148,7 +149,7 @@ def code_block_directive(name, arguments, options, content, lineno,
             # the reason is we want to be able to define a start-at like
             # def mymethod(self)
             # and have such a definition included
-            #import pdb; pdb.set_trace()
+
             after_text = options.get('start-at', None)
             if after_text:
                 # skip content in include_text before *and NOT incl.* a matching text
@@ -157,15 +158,16 @@ def code_block_directive(name, arguments, options, content, lineno,
                     raise state_machine.reporter.severe('Problem with "start-at" option of "%s" '
                                       'code-block directive:\nText not found.' % options['start-at'])
                 content = content[after_index:]
+                line_offset = len(content[:after_index].splitlines())
 
             after_text = options.get('start-after', None)
             if after_text:
                 # skip content in include_text before *and incl.* a matching text
-                print type(content), type(after_text)
                 after_index = content.find(after_text)
                 if after_index < 0:
                     raise state_machine.reporter.severe('Problem with "start-after" option of "%s" '
                                       'code-block directive:\nText not found.' % options['start-after'])
+                line_offset = len(content[:after_index + len(after_text)].splitlines())
                 content = content[after_index + len(after_text):]
 
 
@@ -192,14 +194,16 @@ def code_block_directive(name, arguments, options, content, lineno,
         content = u'\n'.join(content)
 
     withln = "linenos" in options
+    if not "linenos_offset" in options:
+        line_offset = 0
 
     language = arguments[0]
     # create a literal block element and set class argument
     code_block = nodes.literal_block(classes=["code", language])
 
     if withln:
-        lineno = 1
-        total_lines = content.count('\n') + 1
+        lineno = 1 + line_offset
+        total_lines = content.count('\n') + 1 + line_offset
         lnwidth = len(str(total_lines))
         fstr = "\n%%%dd " % lnwidth
         code_block += nodes.inline(fstr[1:] % lineno, fstr[1:] % lineno,   classes=['linenumber'])
@@ -240,6 +244,7 @@ code_block_directive.options = {'include': directives.unchanged_required,
                                 'start-after': directives.unchanged_required,
                                 'end-before': directives.unchanged_required,
                                 'linenos': directives.unchanged,
+                                'linenos_offset': directives.unchanged,
                                 }
 
 
@@ -258,10 +263,12 @@ code_block_directive.options = {'include': directives.unchanged_required,
 
 if __name__ == '__main__':
     from docutils.core import publish_cmdline, default_description
+    from docutils.parsers.rst import directives
+    directives.register_directive('code-block', code_block_directive)
     description = "code-block directive test output" + default_description
     try:
         import locale
         locale.setlocale(locale.LC_ALL, '')
     except Exception:
         pass
-    publish_cmdline(writer_name='pdf', description=description)
+    publish_cmdline(writer_name='html', description=description)

@@ -222,6 +222,8 @@ class DelayedTable(Flowable):
 
     def split(self, w, h):
         if self.splitByRow:
+            if not self.t:
+                self.wrap(w,h)
             return self.t.split(w, h)
         else:
             return []
@@ -360,6 +362,14 @@ class SplitTable(DelayedTable):
             return DelayedTable.split(self,w,h)
 
 
+class MySpacer(Spacer):
+    def wrap (self, aW, aH):
+        w, h = Spacer.wrap(self, aW, aH)
+        #print 'SH', aH, h
+        self.height = min(aH, h)
+        return w, self.height
+
+    
 
 class MyPageBreak(FrameActionFlowable):
 
@@ -731,11 +741,9 @@ class BoundByWidth(Flowable):
         _sW = 0
         scale = self.scale
         content = None
-        aW = None
         #, canv, x, y, _sW=0, scale=1.0, content=None, aW=None):
         pS = 0
-        if aW is None:
-            aW = self.width
+        aW = self.width
         aW = scale*(aW + _sW)
         if content is None:
             content = self.content
