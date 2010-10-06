@@ -9,9 +9,9 @@ import shlex
 from flowables import *
 import flowables
 from styles import adjustUnits
-from log import log
+from log import log, nodeid
 
-def parseRaw(data):
+def parseRaw(data, node):
     """Parse and process a simple DSL to handle creation of flowables.
 
     Supported (can add others on request):
@@ -27,6 +27,8 @@ def parseRaw(data):
         lexer = shlex.shlex(line)
         lexer.whitespace += ','
         tokens = list(lexer)
+        if not tokens:
+            continue # Empty line
         command = tokens[0]
         if command == 'PageBreak':
             if len(tokens) == 1:
@@ -51,7 +53,7 @@ def parseRaw(data):
         elif command == 'SetPageCounter':
             elements.append(flowables.PageCounter(*tokens[1:]))
         else:
-            log.error('Unknown command %s in raw pdf directive'%command)
+            log.error('Unknown command %s in raw pdf directive [%s]'%(command,nodeid(node)))
     return elements
 
 

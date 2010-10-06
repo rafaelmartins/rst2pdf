@@ -57,6 +57,7 @@ styles:
 
     confval: parent: bodytext
     data: parent: bodytext
+    kbd: parent: bodytext
     desc: {parent: bodytext, spaceBefore: 6}
     descclassname: {fontName: stdMono, parent: literal}
     descname: {fontName: stdMonoBold, parent: literal}
@@ -200,7 +201,7 @@ styles:
         parent: code
         textColor: #4000E0
 
-    pygments-n-Identifier: parent: code
+    pygments-n-identifier: parent: code
     pygments-na: {parent: code, textColor: #0000C0}
     pygments-nb: {parent: code, textColor: #007020}
     pygments-nc:
@@ -317,7 +318,14 @@ styles:
         parent: heading3
 
     table-heading: {borderWidth: 0, parent: heading}
+
+    todo-node:
+        backColor: #FFFFFF
+        borderColor: #CCCCCC
+        parent: admonition
+
     versionmodified: {fontName: stdItalic, parent: bodytext}
+
     warning:
         backColor: #FFE4E4
         borderColor: #FF6666

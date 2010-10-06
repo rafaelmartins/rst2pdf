@@ -1,9 +1,60 @@
 New in SVN
 ----------
 
+* Fixed Issue 343: Plugged memory leak in the RSON parser.
+* Fix for Issue 287: there is still a corner case if you have two sections
+  with the same title, at the same level, in the same page, in different files
+  where the links will break.
+* Fixed Issue 367: german-localized dates are MM. DD. YYYY so when used in sphinx's
+  template cover they appeared weird, like a list item. Fixed with a minor workaround in 
+  the template.
+* Fixed Issue 366: links to "#" make no sense on a PDF file
+* Made definitions from definition lists more stylable.
+* Moved definition lists to SplitTables, so you can have very long
+  definitions.
+* Fixed Issue 318: Implemented Domain specific indexes for Sphinx 1.0.x
+* Fixed Index links when using Sphinx/pdfbuilder.
+* Fixed Issue 360: Set literal.wordWrap to None by default so it doesn't inherit
+  wordWrap CJK when you use the otherwise correct japanese settings. In any case,
+  literal blocks are not supposed to wrap at all.
+* Switched pdfbuilder to use SplitTables by default (it made no sense not to do it)
+* Fixed Issue 365: some TTF fonts don't validate but they work anyway.
+* Set a valid default baseurl for Sphinx (makes it much faster!)
+* New feature: --use-numbered-links to show section numbers in links to sections, like  "See section 2.3 Termination"
+* Added stylesheets for landscape paper sizes (i.e: a4-landscape.style)
+* Fixed Issue 364: Some options not respected when passed in per-doc options
+  in sphinx.
+* Fixed Issue 361: multiple linebreaks in line blocks were collapsed.
+* Fixed Issue 363: strange characters in some cases in math directive.
+* Fixed Issue 362: Smarter auto-enclosing of equations in $...$
+* Fixed Issue 358: --real--footnotes defaults to False, but help text indicates default is True
+* Fixed Issue 359: Wrong --fit-background-mode help string
+* Fixed Issue 356: missing cells if a cell spawns rows and columns.
+* Fixed Issue 349: Work correctly with languages that are available in form  aa_bb and not aa (example: zh_cn)
+* Fixed Issue 345: give file/line info when there is an error in a raw PDF directive.
+* Fixed Issue 336: JPEG images should work even without PIL (but give a warning because
+  sizes will probably be wrong)
+* Fixed Issue 351: footnote/citation references were generated incorrectly, which
+  caused problems if there was a citation with the same text as a heading.
+* Fixed Issue 353: better handling of graphviz, so that it works without vectorpdf
+  but gives a warning about it.
+* Fixed Issue 354: make todo_node from sphinx customizable.
+* Fixed bug where nested lists broke page layout if the page was small.
+* Smarter --inline-links option
+* New extension: fancytitles, see http://lateral.netmanagers.com.ar/weblog/posts/BB906.html
+* New feature: tab-width option in code-block directive (defaults to 8).
+* Fixed Issue 340: endnotes/footnotes were not styled.
+* Fixed Issue 339: class names using _ were not usable.
+* Fixed Issue 335: ugly crash when using images in some
+  specific places (looks like a reportlab bug)
+* Fixed Issue 329: make the figure alignment/class attributes
+  work more like LaTeX than HTML. 
+* Fixed Issue 328: list item styles were being ignored.
+* Fixed Issue 186: new --use-floating-images makes images with
+  :align: set work like in HTML, with the next flowable flowing
+  beside it.
 * Fixed Issue 307: header/footer from stylesheet now supports inline
   rest markup and substitutions defined in the main document.
-* Don't fail so much with Sphinx 1.0b2 (but modindex is disabled)
 * New pdf_toc_depth option for Sphinx/pdfbuilder
 * New pdf_use_toc option for Sphinx/pdfbuilder
 * Fixed Issue 308: compatibility with reportlab from SVN

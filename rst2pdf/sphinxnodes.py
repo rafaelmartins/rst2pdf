@@ -22,7 +22,7 @@ from copy import copy
 
 from log import nodeid, log
 from flowables import  MySpacer, MyIndenter, Reference, DelayedTable, Table
-from image import MyImage
+from image import MyImage, VectorPdf
 
 from opt_imports import Paragraph, sphinx
 
@@ -30,6 +30,7 @@ from nodehandlers import NodeHandler, FontHandler, HandleEmphasis
 import math_flowable
 from reportlab.platypus import Paragraph, TableStyle
 import sphinx
+import docutils
 
 ################## NodeHandler subclasses ###################
 
@@ -108,7 +109,8 @@ class HandleDescAnnotation(SphinxHandler, HandleEmphasis, sphinx.addnodes.desc_a
 class HandleSphinxIndex(SphinxHandler, sphinx.addnodes.index):
     def gather_elements(self, client, node, style):
         try:
-            client.pending_targets.append(node['entries'][0][2])
+            for entry in node['entries']:
+                client.pending_targets.append(docutils.nodes.make_id(entry[2]))
         except IndexError:
             if node['entries']:
                 log.error("Can't process index entry: %s [%s]",
@@ -198,15 +200,32 @@ class HandleSphinxEq(SphinxHandler, mathbase.eqref):
         return '<a href="equation-%s" color="%s">%s</a>'%(node['target'], 
             client.styles.linkColor, node.astext())
 
+graphviz_warn = False
+
 try:
     x=sphinx.ext.graphviz.graphviz
     class HandleSphinxGraphviz(SphinxHandler, sphinx.ext.graphviz.graphviz):
         def gather_elements(self, client, node, style):
-                # Based on the graphviz extension
+            # Based on the graphviz extension
+            global graphviz_warn
             try:
-                fname, outfn = sphinx.ext.graphviz.render_dot(node['builder'], node['code'], node['options'], 'pdf')
-                client.to_unlink.append(outfn)
-                client.to_unlink.append(outfn+'.map')
+                # Is vectorpdf enabled?
+                if hasattr(VectorPdf,'load_xobj'):
+                    # Yes, we have vectorpdf
+                    fname, outfn = sphinx.ext.graphviz.render_dot(node['builder'], node['code'], node['options'], 'pdf')
+                else:
+                    # Use bitmap
+                    if not graphviz_warn:
+                        log.warning('Using graphviz with PNG output. You get much better results if you enable the vectorpdf extension.')
+                        graphviz_warn = True
+                    fname, outfn = sphinx.ext.graphviz.render_dot(node['builder'], node['code'], node['options'], 'png')
+                if outfn:
+                    client.to_unlink.append(outfn)
+                    client.to_unlink.append(outfn+'.map')
+                else:
+                    # Something went very wrong with graphviz, and
+                    # sphinx should have given an error already
+                    return []
             except sphinx.ext.graphviz.GraphvizError, exc:
                 log.error('dot code %r: ' % node['code'] + str(exc))
                 return [Paragraph(node['code'],client.styles['code'])]

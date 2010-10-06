@@ -88,7 +88,7 @@ class DocutilsInterface(object):
         # Get lexer for language (use text as fallback)
         try:
             if self.language and unicode(self.language).lower() <> 'none':
-                lexer = get_lexer_by_name(self.language)
+                lexer = get_lexer_by_name(self.language.lower())
             else:
                 lexer = get_lexer_by_name('text')
         except ValueError:
@@ -192,6 +192,8 @@ def code_block_directive(name, arguments, options, content, lineno,
 
     else:
         content = u'\n'.join(content)
+    tabw = int(options.get('tab-width', 8))
+    content = content.replace('\t',' '*tabw)
 
     withln = "linenos" in options
     if not "linenos_offset" in options:
@@ -245,6 +247,7 @@ code_block_directive.options = {'include': directives.unchanged_required,
                                 'end-before': directives.unchanged_required,
                                 'linenos': directives.unchanged,
                                 'linenos_offset': directives.unchanged,
+                                'tab-width': directives.unchanged,
                                 }
 
 

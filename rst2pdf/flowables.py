@@ -185,7 +185,7 @@ class OddEven(Flowable):
         """Makes no sense to split this..."""
         return []
 
-class DelayedTable(Flowable):
+class DelayedTable(Table):
     """A flowable that inserts a table for which it has the data.
 
     Needed so column widths can be determined after we know on what frame
@@ -202,6 +202,18 @@ class DelayedTable(Flowable):
         self.hAlign = TA_CENTER
         self.splitByRow=splitByRow
 
+        ## Try to look more like a Table
+        #self._ncols = 2
+        #self._nosplitCmds= []
+        #self._nrows= 1
+        #self._rowHeights= [None]
+        #self._spanCmds= []
+        #self.ident= None
+        #self.repeatCols= 0
+        #self.repeatRows= 0
+        #self.splitByRow= 1
+        #self.vAlign= 'MIDDLE'
+        
     def wrap(self, w, h):
         # Create the table, with the widths from colWidths reinterpreted
         # if needed as percentages of frame/cell/whatever width w is.
@@ -365,7 +377,6 @@ class SplitTable(DelayedTable):
 class MySpacer(Spacer):
     def wrap (self, aW, aH):
         w, h = Spacer.wrap(self, aW, aH)
-        #print 'SH', aH, h
         self.height = min(aH, h)
         return w, self.height
 
@@ -407,7 +418,7 @@ class MyPageBreak(FrameActionFlowable):
                 if not frame._atTop:
                     # Blank pages get no heading or footer
                     frame._generated_content.append(SetNextTemplate(self.templateName))
-                    frame._generated_content.append(SetNextTemplate('coverPage'))
+                    frame._generated_content.append(SetNextTemplate('emptyPage'))
                     frame._generated_content.append(PageBreak())
                     frame._generated_content.append(ResetNextTemplate())
                     frame._generated_content.append(PageBreak())
@@ -423,7 +434,7 @@ class MyPageBreak(FrameActionFlowable):
                 if not frame._atTop:
                     # Blank pages get no heading or footer
                     frame._generated_content.append(SetNextTemplate(self.templateName))
-                    frame._generated_content.append(SetNextTemplate('coverPage'))
+                    frame._generated_content.append(SetNextTemplate('emptyPage'))
                     frame._generated_content.append(PageBreak())
                     frame._generated_content.append(ResetNextTemplate())
                     frame._generated_content.append(PageBreak())
@@ -468,6 +479,8 @@ class ResetNextTemplate(Flowable):
         self.canv.templateName, self.canv.oldTemplateName = \
             self.canv.oldTemplateName, self.canv.templateName
 
+    def wrap(self, aW, aH):
+        return 0,0
 
 class Transition(Flowable):
     """Wrap canvas.setPageTransition.
@@ -560,7 +573,7 @@ class FrameCutter(FrameActionFlowable):
     def frameAction(self, frame):
         idx = frame.container.frames.index(frame)
         if self.floatLeft:
-            # Don´ t bother inserting a silly thin frame
+            # Don't bother inserting a silly thin frame
             if self.width-self.padding > 30:
                 f1 = SmartFrame(frame.container,
                     frame._x1 + self.dx - 2*self.padding,
@@ -582,7 +595,7 @@ class FrameCutter(FrameActionFlowable):
                         frame._height - self.f.height - 3*self.padding,
                         topPadding=0))
         else:
-            # Don´ t bother inserting a silly thin frame
+            # Don't bother inserting a silly thin frame
             if self.width-self.padding > 30:
                 f1 = SmartFrame(frame.container,
                     frame._x1 - self.width,
@@ -939,7 +952,7 @@ class MyTableOfContents(TableOfContents):
             
         if rlabel in self.refids and islocal(node):
             self.addEntry(level, text, pageNum)
-            self.refid_lut[(level, text)] = label
+            self.refid_lut[(level, text, pageNum)] = label
 
     def wrap(self, availWidth, availHeight):
         """Adds hyperlink to toc entry."""
@@ -972,7 +985,7 @@ class MyTableOfContents(TableOfContents):
                 leftColStyle=self.getLevelStyle(left_col_level)
             else: # For ReportLab <= 2.3
                 leftColStyle = self.levelStyles[left_col_level]
-            label = self.refid_lut.get((level, text), None)
+            label = self.refid_lut.get((level, text, pageNum), None)
             if label:
                 pre = u'<a href="%s" color="%s">' % (label, self.linkColor)
                 post = u'</a>'

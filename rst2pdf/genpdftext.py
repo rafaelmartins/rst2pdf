@@ -71,6 +71,9 @@ class HandleReference(NodeHandler, docutils.nodes.reference):
         pre, post = '', ''
         uri = node.get('refuri')
         if uri:
+            # Issue 366: links to "#" make no sense in a PDF
+            if uri =="#":
+                return "", ""
             if uri.startswith ('#'):
                 pass
             elif client.baseurl: # Need to join the uri with the base url
@@ -78,7 +81,14 @@ class HandleReference(NodeHandler, docutils.nodes.reference):
 
             if urlparse(uri)[0] and client.inlinelinks:
                 # external inline reference
-                post = u' (%s)' % uri
+                if uri in [node.astext(),"mailto:"+node.astext()]:
+                    # No point on repeating it
+                    post = u''
+                elif uri.startswith('http://') or uri.startswith('ftp://'):
+                    post = u' (%s)' % uri
+                elif uri.startswith('mailto:'):
+                    #No point on showing "mailto:"
+                    post = u' (%s)' % uri[7:]
             else:
                 # A plain old link
                 pre += u'<a href="%s" color="%s">' %\
@@ -107,10 +117,16 @@ class HandleSysMessage(HandleText, docutils.nodes.system_message, docutils.nodes
 
 class HandleGenerated(HandleText, docutils.nodes.generated):
     pass
+#    def get_text(self, client, node, replaceEnt):
+#        if 'sectnum' in node['classes']:
+#            # This is the child of a title with a section number
+#            # Send the section number up to the title node
+#            node.parent['_sectnum'] = node.astext()
+#        return node.astext()
 
 class HandleImage(NodeHandler, docutils.nodes.image):
     def gather_elements(self, client, node, style):
-        # FIXME: handle class,target,alt, check align
+        # FIXME: handle class,target,alt
 
         uri = str(node.get("uri"))
         if uri.split("://")[0].lower() not in ('http','ftp','https'):
@@ -162,27 +178,16 @@ class HandleImage(NodeHandler, docutils.nodes.image):
         return '<img src="%s" width="%f" height="%f" %s/>'%\
             (uri, w, h, align)
 
-class HandleFootRef(NodeHandler, docutils.nodes.footnote_reference):
+class HandleFootRef(NodeHandler, docutils.nodes.footnote_reference,docutils.nodes.citation_reference):
     def get_text(self, client, node, replaceEnt):
         # TODO: when used in Sphinx, all footnotes are autonumbered
         anchors=''
-        for i in node['ids']:
+        for i in node.get('ids'):
             if i not in client.targets:
                 anchors+='<a name="%s"/>' % i
                 client.targets.append(i)
         return u'%s<super><a href="%s" color="%s">%s</a></super>'%\
-            (anchors, '#' + node.astext(),
-                client.styles.linkColor, node.astext())
-
-class HandleCiteRef(NodeHandler, docutils.nodes.citation_reference):
-    def get_text(self, client, node, replaceEnt):
-        anchors=''
-        for i in node['ids']:
-            if i not in client.targets:
-                anchors +='<a name="%s"/>' % i
-                client.targets.append(i)
-        return u'%s[<a href="%s" color="%s">%s</a>]'%\
-            (anchors, '#' + node.astext(),
+            (anchors, '#' + node.get('refid',node.astext()),
                 client.styles.linkColor, node.astext())
 
 class HandleTarget(NodeHandler, docutils.nodes.target):

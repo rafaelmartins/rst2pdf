@@ -90,7 +90,7 @@ The possible values are:
 
 --fit-background-mode=MODE
                         How to fit the background image to the page. One of
-                        stretch or center. Default="center"
+                        scale or center. Default="center"
                                         
 --inline-links
                     Shows target between parenthesis instead of active link
@@ -152,6 +152,13 @@ The possible values are:
 --custom-cover=FILE
                         Template file used for the cover page. Default:
                         cover.tmpl
+
+--use-floating-images
+                        Makes images with :aling: attribute work more like in
+                        rst2html. Default: False
+
+--use-numbered-links  When using numbered sections, adds the numbers to all
+                      links referring to the section headers. Default: False
 
 
 EXAMPLES

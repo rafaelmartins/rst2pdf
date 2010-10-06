@@ -266,8 +266,11 @@ class BaseObjects(object):
         ''' By default, RSON objects are dictionaries that
             allow attribute access to their existing contents.
         '''
-        def __init__(self):
-            self.__dict__ = self
+        
+       def __getattr__(self, key):
+            return self[key]
+       def __setattr__(self, key, value):
+            self[key]=value
 
         def append(self, itemlist):
             mydict = self

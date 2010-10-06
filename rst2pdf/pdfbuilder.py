@@ -4,12 +4,9 @@
       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
       Usage:
-      1. Copy this file to your Sphinx project directory.
-      2. In conf.py file uncomment this line:
-         #sys.path.append(os.path.abspath('.'))
-      3. In conf.py add 'pdfbuilder' element to 'extensions' list:
-         extensions = ['pdfbuilder']
-      4. Modify your Makefile or run it with:
+      1. In conf.py add 'rst2pdf.pdfbuilder' element to 'extensions' list:
+         extensions = ['rst2pdf.pdfbuilder']
+      2. Modify your Makefile or run it with:
          $ sphinx-build -d_build/doctrees -bpdf . _build/pdf
 
     :copyright: Copyright 2009 Roberto Alsina, Wojtek Walczak
@@ -27,15 +24,17 @@ import os
 from cStringIO import StringIO
 from rst2pdf import createpdf
 
-from rst2pdf import pygments_code_block_directive
+from rst2pdf import pygments_code_block_directive, oddeven_directive
 from pygments.lexers import get_lexer_by_name, guess_lexer
 
 from docutils import writers
 from docutils import nodes
 from docutils import languages
+from docutils.languages import get_language
 from docutils.transforms.parts import Contents
 from docutils.io import FileOutput
 import docutils.core
+from urlparse import urljoin, urlparse, urlunparse
 
 import sphinx
 from sphinx import addnodes
@@ -84,7 +83,7 @@ class PDFBuilder(Builder):
                 else:
                     opts={}
                 self.info("processing " + targetname + "... ", nonl=1)
-                
+                self.opts = opts
                 class dummy:
                     extensions=self.config.pdf_extensions
                     
@@ -108,8 +107,12 @@ class PDFBuilder(Builder):
                                 real_footnotes=opts.get('pdf_real_footnotes',self.config.pdf_real_footnotes),
                                 use_toc=opts.get('pdf_use_toc',self.config.pdf_use_toc),
                                 toc_depth=opts.get('pdf_toc_depth',self.config.pdf_toc_depth),
+                                use_coverpage=opts.get('pdf_use_coverpage',self.config.pdf_use_coverpage),
+                                use_numbered_links=opts.get('pdf_use_numbered_links',self.config.pdf_use_numbered_links),
+                                fit_background_mode=opts.get('pdf_fit_background_mode',self.config.pdf_fit_background_mode),
+                                baseurl=opts.get('pdf_baseurl',self.config.pdf_baseurl),
                                 srcdir=self.srcdir,
-                                config=self.config
+                                config=self.config,
                                 )
                 
                 tgt_file = path.join(self.outdir, targetname + self.out_suffix)
@@ -147,6 +150,9 @@ class PDFBuilder(Builder):
             self.titles.append((docname, entry[2]))
 
     def assemble_doctree(self, docname, title, author, appendices):
+
+        # FIXME: use the new inline_all_trees from Sphinx.
+        # check how the LaTeX builder does it.
         
         self.docnames = set([docname])
         self.info(darkgreen(docname) + " ", nonl=1)
@@ -175,12 +181,21 @@ class PDFBuilder(Builder):
         tree = self.env.get_doctree(docname)        
         tree = process_tree(docname, tree)
 
+        self.docutils_languages = {}
         if self.config.language:
-            langmod = languages.get_language(self.config.language[:2])
-        else:
-            langmod = languages.get_language('en')
-            
-        if self.config.pdf_use_index:
+            lang = self.config.language
+            try:
+                self.docutils_languages[lang] = get_language(lang)
+            except ImportError:
+                try:
+                    self.docutils_languages[lang] = \
+                         get_language(lang.split('_', 1)[0])
+                except ImportError:
+                    log.warning("Can't load Docutils module \
+                        for language %s", lang)
+                langmod = languages.get_language('en')
+
+        if self.opts.get('pdf_use_index',self.config.pdf_use_index):
             # Add index at the end of the document
             
             # This is a hack. create_index creates an index from 
@@ -204,101 +219,75 @@ class PDFBuilder(Builder):
                 tree.append(nodes.raw(text='OddPageBreak twoColumn', format='pdf'))
                 tree.append(index_nodes)
 
-        # This is stolen from the HTML builder
-        #moduleindex = self.env.domaindata['py']['modules']
-        if sphinx.__version__ < "1.0" and self.config.pdf_use_modindex and self.env.modules:
-            modules = sorted(((mn, ('#module-' + mn, sy, pl, dep)) 
-                for (mn, (fn, sy, pl, dep)) in self.env.modules.iteritems()),
-                key=lambda x: x[0].lower())
-            # collect all platforms
-            platforms = set()
-            letters = []
-            pmn = ''
-            fl = '' # first letter
-            modindexentries = []
-            num_toplevels = 0
-            num_collapsables = 0
-            cg = 0 # collapse group
-            for mn, (fn, sy, pl, dep) in modules:
-                pl = pl and pl.split(', ') or []
-                platforms.update(pl)
-                ignore = self.env.config['modindex_common_prefix']
-                ignore = sorted(ignore, key=len, reverse=True)
-                for i in ignore:
-                    if mn.startswith(i):
-                        mn = mn[len(i):]
-                        stripped = i
-                        break
-                else:
-                    stripped = ''
+        # This is stolen from the HTML builder's prepare_writing function
+        self.domain_indices = []
+        # html_domain_indices can be False/True or a list of index names
+        indices_config = self.config.pdf_domain_indices
+        if indices_config:
+            for domain in self.env.domains.itervalues():
+                for indexcls in domain.indices:
+                    indexname = '%s-%s' % (domain.name, indexcls.name)
+                    if isinstance(indices_config, list):
+                        if indexname not in indices_config:
+                            continue
+                    # deprecated config value
+                    if indexname == 'py-modindex' and \
+                           not self.config.pdf_use_modindex:
+                        continue
+                    content, collapse = indexcls(domain).generate()
+                    if content:
+                        self.domain_indices.append(
+                            (indexname, indexcls, content, collapse))
 
-                if fl != mn[0].lower() and mn[0] != '_':
-                    # heading
-                    letter = mn[0].upper()
-                    if letter not in letters:
-                        modindexentries.append(['', False, 0, False,
-                                                letter, '', [], False, ''])
-                        letters.append(letter)
-                tn = mn.split('.')[0]
-                if tn != mn:
-                    # submodule
-                    if pmn == tn:
-                        # first submodule - make parent collapsable
-                        modindexentries[-1][1] = True
-                        num_collapsables += 1
-                    elif not pmn.startswith(tn):
-                        # submodule without parent in list, add dummy entry
-                        cg += 1
-                        modindexentries.append([tn, True, cg, False, '', '',
-                                                [], False, stripped])
-                else:
-                    num_toplevels += 1
-                    cg += 1
-                modindexentries.append([mn, False, cg, (tn != mn), fn, sy, pl,
-                                        dep, stripped])
-                pmn = mn
-                fl = mn[0].lower()
-            platforms = sorted(platforms)
-            # As some parts of the module names may have been stripped, those
-            # names have changed, thus it is necessary to sort the entries.
-            if ignore:
-                def sorthelper(entry):
-                    name = entry[0]
-                    if name == '':
-                        # heading
-                        name = entry[4]
-                    return name.lower()
+        # self.domain_indices contains a list of indices to generate, like
+        # this:
+        # [('py-modindex',
+        #    <class 'sphinx.domains.python.PythonModuleIndex'>,
+        #   [(u'p', [[u'parrot', 0, 'test', u'module-parrot', 'Unix, Windows',
+        #   '', 'Analyze and reanimate dead parrots.']])], True)]
 
-                modindexentries.sort(key=sorthelper)
-                letters.sort()
+        # Now this in the HTML builder is passed onto write_domain_indices.
+        # We handle it right here
+        
+        for indexname, indexcls, content, collapse in self.domain_indices:
+            indexcontext = dict(
+                indextitle = indexcls.localname,
+                content = content,
+                collapse_index = collapse,
+            )
+            # In HTML this is handled with a Jinja template, domainindex.html
+            # We have to generate docutils stuff right here in the same way.
+            self.info(' ' + indexname, nonl=1)
+            print
 
-            # Now, let's try to do the same thing
-            # modindex.html does, more or less
-            
             output=['DUMMY','=====','',
                     '.. _modindex:\n\n']
-            t=_('Global Module Index')
+            t=indexcls.localname
             t+='\n'+'='*len(t)+'\n'
             output.append(t)
-            for modname, collapse, cgroup, indent,\
-                fname, synops, pform, dep, stripped in modindexentries:
-                if not modname: # A letter
-                    output.append('.. cssclass:: heading4\n\n%s\n\n'%fname)
-                else: # A module
-                    if fname:
-                        output.append('`%s <%s>`_ '%(stripped+modname,fname))
-                        if pform and pform[0]:
-                            output[-1]+='*(%s)*'%' '.join(pform)
-                        if synops:
-                            output[-1]+=', *%s*'%synops
-                        if dep:
-                            output[-1]+=' **%s**'%_('Deprecated')
+
+            for letter, entries in content:
+                output.append('.. cssclass:: heading4\n\n%s\n\n'%letter)
+                for (name, grouptype, page, anchor,
+                    extra, qualifier, description) in entries:
+                    if qualifier:
+                        q = '[%s]'%qualifier
+                    else:
+                        q = ''
+
+                    if extra:
+                        e = '(%s)'%extra
+                    else:
+                        e = ''
+                    output.append ('`%s <#%s>`_ %s %s'%(name, anchor, e, q))
+                    output.append('    %s'%description)
                 output.append('')
-                
+
             dt = docutils.core.publish_doctree('\n'.join(output))[1:]
             dt.insert(0,nodes.raw(text='OddPageBreak twoColumn', format='pdf'))
-            tree.extend(dt)
-                    
+            tree.extend(dt)            
+
+        
         if appendices:
             tree.append(nodes.raw(text='OddPageBreak %s'%self.page_template, format='pdf'))
             self.info()
@@ -325,12 +314,9 @@ class PDFBuilder(Builder):
                 and self.config.pdf_use_index:
                 pendingnode.replace_self(nodes.reference(text=pendingnode.astext(),
                     refuri=pendingnode['reftarget']))
-            if pendingnode.get('reftarget',None) == 'modindex'\
-                and self.config.pdf_use_modindex:
-                pendingnode.replace_self(nodes.reference(text=pendingnode.astext(),
-                    refuri=pendingnode['reftarget']))
+            # FIXME: probably need to handle dangling links to domain-specific indexes
             else:
-                # FIXME: This is from the LaTeX builder and I dtill don't understand it
+                # FIXME: This is from the LaTeX builder and I still don't understand it
                 # well, and doesn't seem to work
                 
                 # resolve :ref:s to distant tex files -- we can't add a cross-reference,
@@ -403,12 +389,13 @@ def genindex_nodes(genindexentries):
     output=['DUMMY','=====','.. _genindex:\n\n',indexlabel,indexunder,'']
 
     for key, entries in genindexentries:
+        #from pudb import set_trace; set_trace()
         output.append('.. cssclass:: heading4\n\n%s\n\n'%key) # initial
         for entryname, (links, subitems) in entries:
             if links:
-                output.append('`%s <%s>`_'%(entryname,links[0]))
+                output.append('`%s <#%s>`_'%(entryname,nodes.make_id(links[0])))
                 for i,link in enumerate(links[1:]):
-                    output[-1]+=(' `[%s] <%s>`_ '%(i+1,link))
+                    output[-1]+=(' `[%s] <#%s>`_ '%(i+1,nodes.make_id(link)))
                 output.append('')
             else:
                 output.append(entryname)
@@ -429,18 +416,25 @@ def genindex_nodes(genindexentries):
 
 
 class PDFContents(Contents):
+
+    # Mostly copied from Docutils' Contents transformation
     
     def build_contents(self, node, level=0):
         level += 1
         sections=[]
+        # Replaced this with the for below to make it work for Sphinx
+        # trees.
+        
+        #sections = [sect for sect in node if isinstance(sect, nodes.section)]
         for sect in node:
-            if isinstance(sect,addnodes.start_of_file):
+            if isinstance(sect,nodes.compound):
                 for sect2 in sect:
-                    if isinstance(sect2,nodes.section):
-                        sections.append(sect2)
+                    if isinstance(sect2,addnodes.start_of_file):
+                        for sect3 in sect2:
+                            if isinstance(sect3,nodes.section):
+                                sections.append(sect3)
             elif isinstance(sect, nodes.section):
                 sections.append(sect)
-        #sections = [sect for sect in node if isinstance(sect, nodes.section)]
         entries = []
         autonum = 0
         # FIXME: depth should be taken from :maxdepth: (Issue 320)
@@ -484,14 +478,18 @@ class PDFWriter(writers.Writer):
                 fitmode = 'shrink',
                 compressed = False,
                 inline_footnotes = False,
-                splittables = False,
+                splittables = True,
                 srcdir = '.',
                 default_dpi = 300,
                 page_template = 'cutePage',
                 invariant = False,
                 real_footnotes = False,
                 use_toc = True,
+                use_coverpage = True,
                 toc_depth = 9999,
+                use_numbered_links = False,
+                fit_background_mode = "scale",
+                baseurl = urlunparse(['file',os.getcwd()+os.sep,'','','','']),
                 config = {}):
         writers.Writer.__init__(self)
         self.builder = builder
@@ -513,7 +511,11 @@ class PDFWriter(writers.Writer):
         self.invariant=invariant
         self.real_footnotes=real_footnotes
         self.use_toc=use_toc
+        self.use_coverpage=use_coverpage
         self.toc_depth=toc_depth
+        self.use_numbered_links=use_numbered_links
+        self.fit_background_mode=fit_background_mode
+        self.baseurl = baseurl
         if hasattr(sys, 'frozen'):
             self.PATH = abspath(dirname(sys.executable))
         else:
@@ -526,11 +528,19 @@ class PDFWriter(writers.Writer):
     def translate(self):
         visitor = PDFTranslator(self.document, self.builder)
         self.document.walkabout(visitor)
-        
-        if self.config.language:
-            langmod = languages.get_language(self.config.language[:2])
-        else:
-            langmod = languages.get_language('en')
+        self.docutils_languages = {}
+        lang = self.config.language or 'en'
+        langmod = languages.get_language('en')
+        try:
+            langmod = get_language(lang)
+        except ImportError:
+            try:
+                self.docutils_languages[lang] = \
+                    get_language(lang.split('_', 1)[0])
+            except ImportError:
+                log.warning("Can't load Docutils module "\
+                    "for language %s", lang)
+                langmod = languages.get_language('en')
             
         # Generate Contents topic manually
         if self.use_toc:
@@ -550,7 +560,7 @@ class PDFWriter(writers.Writer):
             contTrans.startnode=pending
             contTrans.apply()
 
-        if self.config.pdf_use_coverpage:
+        if self.use_coverpage:
             # Generate cover page
 
             # FIXME: duplicate from createpdf, refactor!
@@ -605,7 +615,10 @@ class PDFWriter(writers.Writer):
                  style_path=[self.srcdir],
                  basedir=self.srcdir,
                  def_dpi=self.default_dpi,
-                 real_footnotes=self.real_footnotes
+                 real_footnotes=self.real_footnotes,
+                 numbered_links=self.use_numbered_links,
+                 background_fit_mode=self.fit_background_mode,
+                 baseurl=self.baseurl
                 ).createPdf(doctree=self.document,
                     output=sio,
                     compressed=self.compressed)
@@ -753,6 +766,11 @@ class PDFTranslator(nodes.SparseNodeVisitor):
     def depart_production(self, node):
         pass
 
+    def visit_OddEvenNode(self, node):
+        pass
+    def depart_OddEvenNode(self, node):
+        pass
+
 # This is copied from sphinx.highlighting
 def lang_for_block(source,lang):
     if lang in ('py', 'python'):
@@ -856,25 +874,29 @@ def setup(app):
     app.add_config_value('pdf_stylesheets', ['sphinx'], None)
     app.add_config_value('pdf_compressed', False, None)
     app.add_config_value('pdf_font_path', [], None)
-    app.add_config_value('pdf_language', '', 'en_US')
+    app.add_config_value('pdf_language', 'en_US', None)
     app.add_config_value('pdf_fit_mode', '', None),
     app.add_config_value('pdf_break_level', 0, None)
     app.add_config_value('pdf_inline_footnotes', True, None)
     app.add_config_value('pdf_verbosity', 0, None)
     app.add_config_value('pdf_use_index', True, None)
+    app.add_config_value('pdf_domain_indices', True, None)
     app.add_config_value('pdf_use_modindex', True, None)
     app.add_config_value('pdf_use_coverpage', True, None)
     app.add_config_value('pdf_cover_template', 'sphinxcover.tmpl', None)
     app.add_config_value('pdf_appendices', [], None)
-    app.add_config_value('pdf_splittables', False, None)
+    app.add_config_value('pdf_splittables', True, None)
     app.add_config_value('pdf_breakside', 'odd', None)
     app.add_config_value('pdf_default_dpi', 300, None)
-    app.add_config_value('pdf_extensions',[], None)
+    app.add_config_value('pdf_extensions',['vectorpdf'], None)
     app.add_config_value('pdf_page_template','cutePage', None)
     app.add_config_value('pdf_invariant','False', None)
     app.add_config_value('pdf_real_footnotes','False', None)
     app.add_config_value('pdf_use_toc','True', None)
     app.add_config_value('pdf_toc_depth',9999, None)
+    app.add_config_value('pdf_use_numbered_links',False, None)
+    app.add_config_value('pdf_fit_background_mode',"scale", None)
+    app.add_config_value('pdf_baseurl', urlunparse(['file',os.getcwd()+os.sep,'','','','']), None)
     
     author_texescaped = unicode(app.config.copyright)\
                                .translate(texescape.tex_escape_map)

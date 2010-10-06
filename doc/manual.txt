@@ -1606,7 +1606,7 @@ Rst2pdf includes an experimental PDF extension for sphinx.
 
 To use it in your existing sphinx project you need to do the following:
     
-1. Add rst2pdf.createpdf in your conf.py's extensions. For example::
+1. Add rst2pdf.pdfbuilder in your conf.py's extensions. For example::
     
     extensions = ['sphinx.ext.autodoc','rst2pdf.pdfbuilder']
 
@@ -1688,8 +1688,8 @@ To use it in your existing sphinx project you need to do the following:
     # Set the default DPI for images
     #pdf_default_dpi = 72
    
-    # Enable rst2pdf extension modules (default is empty list)
-    # you need vectorpdf for better sphinx's graphviz support
+    # Enable rst2pdf extension modules (default is only vectorpdf)
+    # you need vectorpdf if you want to use sphinx's graphviz support
     #pdf_extensions = ['vectorpdf']
     
     # Page template name for "regular" pages
@@ -1700,6 +1700,12 @@ To use it in your existing sphinx project you need to do the following:
 
     # How many levels deep should the table of contents be?
     pdf_toc_depth = 9999
+
+    # Add section number to section references
+    pdf_use_numbered_links = False
+
+    # Background images fitting mode
+    pdf_fit_background_mode = 'scale'
 
 3. (Maybe) add this in your Makefile (on unix-like systems):
     

@@ -78,7 +78,7 @@ from reportlab.pdfbase.pdfdoc import PDFPageLabel
 from flowables import * # our own reportlab flowables
 from sinker import Sinker
 import flowables
-from image import MyImage
+from image import MyImage, missing
 
 from aafigure_directive import Aanode
 import counter_role
@@ -130,7 +130,8 @@ numberingstyles={ 'arabic': 'ARABIC',
 
 class RstToPdf(object):
 
-    def __init__(self, stylesheets=[], language=None,
+    def __init__(self, stylesheets=[],
+                 language='en',
                  header=None,
                  footer=None,
                  inlinelinks=False,
@@ -153,7 +154,9 @@ class RstToPdf(object):
                  splittables=False,
                  blank_first_page=False,
                  breakside='odd',
-                 custom_cover='cover.tmpl'
+                 custom_cover='cover.tmpl',
+                 floating_images=False,
+                 numbered_links=False,
                  ):
         self.debugLinesPdf=False
         self.depth=0
@@ -162,6 +165,17 @@ class RstToPdf(object):
         self.splittables=splittables
         self.basedir=basedir
         self.language = language
+        try:
+            get_language (self.language)
+        except ImportError:
+            try:
+                language = self.language.split('_', 1)[0]
+                get_language (language)
+                self.language = language
+            except ImportError:
+                log.warning("Can't load Docutils module "\
+                    "for language %s or %s", self.language, language)
+                self.language = 'en'
         self.doc_title = ""
         self.doc_title_clean = ""
         self.doc_subtitle = ""
@@ -169,6 +183,7 @@ class RstToPdf(object):
         self.header = header
         self.footer = footer
         self.custom_cover=custom_cover
+        self.floating_images=floating_images
         self.decoration = {'header': header,
                            'footer': footer,
                            'endnotes': [],
@@ -202,6 +217,7 @@ class RstToPdf(object):
             self.mustMultiBuild = True
         self.def_dpi = def_dpi
         self.show_frame = show_frame
+        self.numbered_links = numbered_links
         self.img_dir = os.path.join(self.PATH, 'images')
 
         # Sorry about this, but importing sphinx.roles makes some
@@ -434,7 +450,7 @@ class RstToPdf(object):
         Takes a list of rows, consisting of cells and performs the following fixes:
 
         * For multicolumn cells, add continuation cells, to make all rows the same
-        size.
+        size. These cells have to be multirow if the original cell is multirow.
 
         * For multirow cell, insert continuation cells, to make all columns the
         same size.
@@ -449,6 +465,8 @@ class RstToPdf(object):
         # If there is a multicol cell, we need to insert Continuation Cells
         # to make all rows the same length
 
+        #from pudb import set_trace; set_trace()
+
         for y in range(0, len(rows)):
             for x in range(0, len(rows[y])):
                 cell = rows[y][x]
@@ -456,7 +474,9 @@ class RstToPdf(object):
                     continue
                 if cell.get("morecols"):
                     for i in range(0, cell.get("morecols")):
-                        rows[y].insert(x + 1, "")
+                        e=docutils.nodes.entry("")
+                        e["morerows"] = cell.get("morerows",0)
+                        rows[y].insert(x + 1, e)
 
         for y in range(0, len(rows)):
             for x in range(0, len(rows[y])):
@@ -530,7 +550,7 @@ class RstToPdf(object):
         if doctree is None:
             if text is not None:
                 if self.language:
-                    settings_overrides={'language_code': self.language[:2]}
+                    settings_overrides={'language_code': self.language}
                 else:
                     settings_overrides={}
                 self.doctree = docutils.core.publish_doctree(text,
@@ -543,8 +563,16 @@ class RstToPdf(object):
         else:
             self.doctree = doctree
 
+        if self.numbered_links:
+            # Transform all links to sections so they show numbers
+            from sectnumlinks import SectNumFolder, SectRefExpander
+            snf = SectNumFolder(self.doctree)
+            self.doctree.walk(snf)
+            srf = SectRefExpander(self.doctree, snf.sectnums)
+            self.doctree.walk(srf)
+            
         elements = self.gen_elements(self.doctree)
-        
+
         # Find cover template, save it in cover_file
         def find_cover(name):
             cover_path=[self.basedir, os.path.expanduser('~/.rst2pdf'),
@@ -587,6 +615,24 @@ class RstToPdf(object):
                 colWidths = self.styles['endnote'].colWidths
                 elements.append(DelayedTable([[n[0], n[1]]],
                     style=t_style, colWidths=colWidths))
+
+        if self.floating_images:
+            #from pudb import set_trace; set_trace()
+            # Handle images with alignment more like in HTML
+            new_elem=[]
+            for i,e in enumerate(elements[::-1]):
+                if isinstance (e, MyImage) and e.image.hAlign != 'CENTER'\
+                and new_elem:
+                    # This is an image where flowables should wrap
+                    # around it
+                    popped=new_elem.pop()
+                    new_elem.append(ImageAndFlowables(e,popped,
+                        imageSide=e.image.hAlign.lower()))
+                else:
+                    new_elem.append(e)
+
+            elements = new_elem
+            elements.reverse()
 
         head = self.decoration['header']
         foot = self.decoration['footer']
@@ -661,15 +707,16 @@ class RstToPdf(object):
             except ValueError, v:
                 # FIXME: cross-document links come through here, which means
                 # an extra pass per cross-document reference. Which sucks.
-                if v.args and str(v.args[0]).startswith('format not resolved'):
-                    missing=str(v.args[0]).split(' ')[-1]
-                    log.error('Adding missing reference to %s and rebuilding. This is slow!'%missing)
-                    elements.append(Reference(missing))
-                    for e in elements:
-                        if hasattr(e,'_postponed'):
-                            delattr(e,'_postponed')
-                else:
-                    raise
+                #if v.args and str(v.args[0]).startswith('format not resolved'):
+                    #missing=str(v.args[0]).split(' ')[-1]
+                    #log.error('Adding missing reference to %s and rebuilding. This is slow!'%missing)
+                    #elements.append(Reference(missing))
+                    #for e in elements:
+                        #if hasattr(e,'_postponed'):
+                            #delattr(e,'_postponed')
+                #else:
+                    #raise
+                raise
 
         #doc = SimpleDocTemplate("phello.pdf")
         #doc.build(elements)
@@ -750,7 +797,7 @@ class FancyDocTemplate(BaseDocTemplate):
                     for i,f in enumerate(S):
                         flowables.insert(i,f)   # put split flowables back on the list
                 else:
-                    if hasattr(f,'_postponed'):
+                    if hasattr(f,'_postponed') and f._postponed > 4:
                         ident = "Flowable %s%s too large on page %d in frame %r%s of template %r" % \
                                 (self._fIdent(f,60,frame),doctemplate._fSizeString(f),self.page, self.frame.id,
                                         self.frame._aSpaceString(), self.pageTemplate.id)
@@ -1055,7 +1102,7 @@ class FancyPage(PageTemplate):
         # Adjust for gutter margin
         canv.addPageLabel(canv._pageNumber-1,numberingstyles[_counterStyle],_counter)
         
-        log.info('Page %s [%s]'%(_counter,doc.page))
+        log.error('Page %s [%s]'%(_counter,doc.page))
         if doc.page % 2: # Left page
             hx = self.hx
             fx = self.fx
@@ -1122,7 +1169,7 @@ def parse_commandline():
         default=def_baseurl,
         help='The base URL for relative URLs. Default="%s"'%def_baseurl)
 
-    def_lang = config.getValue("general", "language", None)
+    def_lang = config.getValue("general", "language", 'en')
     parser.add_option('-l', '--language', metavar='LANG',
         default=def_lang, dest='language',
         help='Language to be used for hyphenation and '\
@@ -1158,7 +1205,7 @@ def parse_commandline():
     parser.add_option('--fit-background-mode', metavar='MODE',
         default=def_fit_background, dest='background_fit_mode',
         help='How to fit the background image to the page.'\
-        ' One of stretch or center. Default="%s"'%def_fit_background)
+        ' One of scale or center. Default="%s"'%def_fit_background)
 
     parser.add_option('--inline-links', action="store_true",
     dest='inlinelinks', default=False,
@@ -1203,7 +1250,7 @@ def parse_commandline():
     parser.add_option('--real-footnotes', action='store_true',
         dest='real_footnotes', default=def_real_footnotes,
         help='Show footnotes at the bottom of the page where they are defined.'\
-        ' Default=%s' % str(not def_real_footnotes))
+        ' Default=%s' % str(def_real_footnotes))
 
     def_dpi = config.getValue("general", "default_dpi", 300)
     parser.add_option('--default-dpi', dest='def_dpi', metavar='NUMBER',
@@ -1257,6 +1304,16 @@ def parse_commandline():
     parser.add_option('--custom-cover', dest='custom_cover',
         metavar='FILE', default= def_cover,
         help='Template file used for the cover page. Default: %s'%def_cover)
+
+    def_floating_images = config.getValue("general", "floating_images", False)
+    parser.add_option('--use-floating-images', action='store_true', default=def_floating_images,
+        help='Makes images with :aling: attribute work more like in rst2html. Default: %s'%def_floating_images,
+        dest='floating_images')
+
+    def_numbered_links = config.getValue("general", "numbered_links", False)
+    parser.add_option('--use-numbered-links', action='store_true', default=def_numbered_links,
+        help='When using numbered sections, adds the numbers to all links referring to the section headers. Default: %s'%def_numbered_links,
+        dest='numbered_links')
 
     return parser
 
@@ -1390,12 +1447,16 @@ def main(args=None):
         splittables=options.splittables,
         blank_first_page=options.blank_first_page,
         breakside=options.breakside,
-        custom_cover=options.custom_cover
+        custom_cover=options.custom_cover,
+        floating_images=options.floating_images,
+        numbered_links=options.numbered_links,
         ).createPdf(text=options.infile.read(),
                     source_path=options.infile.name,
                     output=options.outfile,
                     compressed=options.compressed)
 
+# Ugly hack that fixes Issue 335
+reportlab.lib.utils.ImageReader.__deepcopy__ = lambda self,*x: copy(self)
 
 def patch_digester():
     ''' Patch digester so that we can get the same results when image

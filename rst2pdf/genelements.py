@@ -279,9 +279,9 @@ class HandleField(NodeHandler, docutils.nodes.field):
             style=client.styles['fieldname'])
         fb = client.gen_elements(node.children[1],
                 style=client.styles['fieldvalue'])
-        t_style=TableStyle(client.styles['field_list'].commands)
+        t_style=TableStyle(client.styles['field-list'].commands)
         return [DelayedTable([[fn, fb]], style=t_style,
-            colWidths=client.styles['field_list'].colWidths)]
+            colWidths=client.styles['field-list'].colWidths)]
 
 class HandleDecoration(NodeHandler, docutils.nodes.decoration):
     pass
@@ -311,9 +311,9 @@ class HandleAuthor(NodeHandler, docutils.nodes.author):
             # A single author: works like a field
             fb = client.gather_pdftext(node)
 
-            t_style=TableStyle(client.styles['field_list'].commands)
+            t_style=TableStyle(client.styles['field-list'].commands)
             colWidths=map(client.styles.adjustUnits,
-                client.styles['field_list'].colWidths)
+                client.styles['field-list'].colWidths)
 
             node.elements = [Table(
                 [[Paragraph(client.text_for_label("author", style)+":",
@@ -327,8 +327,8 @@ class HandleAuthors(NodeHandler, docutils.nodes.authors):
     def gather_elements(self, client, node, style):
         # Multiple authors. Create a two-column table.
         # Author references on the right.
-        t_style=TableStyle(client.styles['field_list'].commands)
-        colWidths = client.styles['field_list'].colWidths
+        t_style=TableStyle(client.styles['field-list'].commands)
+        colWidths = client.styles['field-list'].colWidths
 
         td = [[Paragraph(client.text_for_label("authors", style)+":",
                     style=client.styles['fieldname']),
@@ -341,8 +341,8 @@ class HandleFList(NodeHandler):
     TableType = DelayedTable
     def gather_elements(self, client, node, style):
         fb = client.gather_pdftext(node)
-        t_style=TableStyle(client.styles['field_list'].commands)
-        colWidths=client.styles['field_list'].colWidths
+        t_style=TableStyle(client.styles['field-list'].commands)
+        colWidths=client.styles['field-list'].colWidths
         if self.adjustwidths:
             colWidths = map(client.styles.adjustUnits, colWidths)
         label=client.text_for_label(self.labeltext, style)+":"
@@ -436,7 +436,7 @@ class HandleBulletList(NodeHandler, docutils.nodes.bullet_list):
         if node ['classes']:
             style = client.styles[node['classes'][0]]
         else:
-            style = client.styles["bullet_list"]
+            style = client.styles["bullet-list"]
             
         node.elements = client.gather_elements(node,
             style=style)
@@ -457,7 +457,7 @@ class HandleDefOrOptList(NodeHandler, docutils.nodes.definition_list,
 
 class HandleFieldList(NodeHandler, docutils.nodes.field_list):
     def gather_elements(self, client, node, style):
-        return [MySpacer(0,client.styles['field_list'].spaceBefore)]+\
+        return [MySpacer(0,client.styles['field-list'].spaceBefore)]+\
                 client.gather_elements(node, style=style)
 
 class HandleEnumeratedList(NodeHandler, docutils.nodes.enumerated_list):
@@ -465,7 +465,7 @@ class HandleEnumeratedList(NodeHandler, docutils.nodes.enumerated_list):
         if node ['classes']:
             style = client.styles[node['classes'][0]]
         else:
-            style = client.styles["item_list"]
+            style = client.styles["item-list"]
         
         node.elements = client.gather_elements(node,
             style = style)
@@ -492,8 +492,8 @@ class HandleOptionListItem(NodeHandler, docutils.nodes.option_list_item):
 
         desc = client.gather_elements(node.children[1], style)
 
-        t_style = TableStyle(client.styles['option_list'].commands)
-        colWidths = client.styles['option_list'].colWidths
+        t_style = TableStyle(client.styles['option-list'].commands)
+        colWidths = client.styles['option-list'].colWidths
         node.elements = [DelayedTable([[client.PreformattedFit(
             optext, client.styles["literal"]), desc]], style = t_style,
             colWidths = colWidths)]
@@ -511,40 +511,32 @@ class HandleDefListItem(NodeHandler, docutils.nodes.definition_list_item):
                     if i not in client.targets:
                         ids.append('<a name="%s"/>' % i)
                         client.targets.append(i)
-                o, c = client.styleToTags("definition_list_term")
+                o, c = client.styleToTags("definition-list-term")
                 tt.append(o + client.gather_pdftext(n) + c)
             elif isinstance(n, docutils.nodes.classifier):
-                o, c = client.styleToTags("definition_list_classifier")
+                o, c = client.styleToTags("definition-list-classifier")
                 tt.append(o + client.gather_pdftext(n) + c)
             else:
                 dt.extend(client.gen_elements(n, style))
 
         # FIXME: make this configurable from the stylesheet
-        node.elements = [DelayedTable([
-            [Paragraph(''.join(ids)+' : '.join(tt), client.styles['definition_list_term']),''],
-            ['',dt]
-            ] , splitByRow=0, colWidths=[10,None], style = [
-                        ['SPAN', [0,0], [1,0]],
-                        ['VALIGN', [ 0, 0 ], [ -1, -1 ], 'TOP' ],
-                        ['LEFTPADDING', [ 0, 0 ], [ -1, -1 ], 0 ],
-                        ['BOTTOMPADDING', [ 0, 0 ], [ -1, -1 ], 0 ],
-                        ['RIGHTPADDING', [ 0, 0 ], [ -1, -1 ], 0 ],
-                        ]
+        t_style = TableStyle (client.styles['definition'].commands)
+        cw = getattr(client.styles['definition'],'colWidths',[])
+        
+        if client.splittables:
+            node.elements = [
+                Paragraph(''.join(ids)+' : '.join(tt), client.styles['definition-list-term']),
+                SplitTable([['',dt]] , colWidths=cw, style = t_style )]
+        else:
+            node.elements = [
+                Paragraph(''.join(ids)+' : '.join(tt), client.styles['definition-list-term']),
+                DelayedTable([['',dt]] , colWidths=[10,None], style = t_style )]
             
-            )]
-        #node.elements = [Paragraph(''.join(ids)+' : '.join(tt),
-            #client.styles['definition_list_term']),
-            #MyIndenter(left=10)] + dt + [MyIndenter(left=-10)]
         return node.elements
 
 class HandleListItem(NodeHandler, docutils.nodes.list_item):
     def gather_elements(self, client, node, style):
-        el = client.gather_elements(node, style=client.styles["bodytext"])
         b, t = client.bullet_for_node(node)
-
-        # FIXME: this is really really not good code
-        if not el:
-            el = [Paragraph(u"<nobr>\xa0</nobr>", client.styles["bodytext"])]
 
         bStyle = copy(style)
         bStyle.alignment = 2
@@ -564,21 +556,38 @@ class HandleListItem(NodeHandler, docutils.nodes.list_item):
         bStyle.fontName=bStyle.bulletFontName
 
         if t == 'bullet':
-            item_st=client.styles['bullet_list_item']
+            item_st=client.styles['bullet-list-item']
         else:
-            item_st=client.styles['item_list_item']
+            item_st=client.styles['item-list-item']
+
+        el = client.gather_elements(node, item_st)
+        # FIXME: this is really really not good code
+        if not el:
+            el = [Paragraph(u"<nobr>\xa0</nobr>", item_st)]
+
 
         idx=node.parent.children.index(node)
         if idx==0:
             # The first item in the list, so doesn't need
             # separation (it's provided by the list itself)
             sb=0
+            # It also doesn't need a first-line-indent
+            fli=0
         else:
             # Not the first item, so need to separate from
             # previous item. Account for space provided by
             # the item's content, too.
-            sb=item_st.spaceBefore-style.spaceBefore
+            sb=item_st.spaceBefore-item_st.spaceAfter
+            fli=item_st.firstLineIndent
 
+        bStyle.spaceBefore=0
+
+        t_style = TableStyle(style.commands)
+        # The -3 here is to compensate for padding, 0 doesn't work :-(
+        t_style._cmds.extend([
+            #["GRID", [ 0, 0 ], [ -1, -1 ], .25, "black" ],
+            ["BOTTOMPADDING", [ 0, 0 ], [ -1, -1 ], -3 ]]
+        )
         if extra_space >0:
             # The bullet is larger, move down the item text
             sb += extra_space
@@ -586,35 +595,24 @@ class HandleListItem(NodeHandler, docutils.nodes.list_item):
         else:
             # The bullet is smaller, move down the bullet
             sbb = -extra_space
-        bStyle.spaceBefore=0
-
-        if (idx+1)==len(node.parent.children): #Not the last item
-            # The last item in the list, so doesn't need
-            # separation (it's provided by the list itself)
-            sa=0
-        else:
-            sa=item_st.spaceAfter-style.spaceAfter
-
-        t_style = TableStyle(style.commands)
-
+            
         #colWidths = map(client.styles.adjustUnits,
             #client.styles['item_list'].colWidths)
         colWidths = getattr(style,'colWidths',[])
         while len(colWidths) < 2:
             colWidths.append(None)
+
         if client.splittables:
             node.elements = [MySpacer(0,sb),
                                 SplitTable([[Paragraph(b, style = bStyle), el]],
                                 style = t_style,
-                                colWidths = colWidths),
-                                MySpacer(0,sa)
+                                colWidths = colWidths)
                                 ]
         else:
             node.elements = [MySpacer(0,sb),
                                 DelayedTable([[Paragraph(b, style = bStyle), el]],
                                 style = t_style,
-                                colWidths = colWidths),
-                                MySpacer(0,sa)
+                                colWidths = colWidths)
                                 ]
         return node.elements
 
@@ -684,7 +682,10 @@ class HandleLine(NodeHandler, docutils.nodes.line):
         i=node.__dict__.get('indent',0)
         qstyle = copy(client.styles['line'])
         qstyle.leftIndent += client.styles.adjustUnits("0.5em")*i
-        return [Paragraph(client.gather_pdftext(node), style=qstyle)]
+        text = client.gather_pdftext(node)
+        if not text: # empty line
+            text=u"<nobr>\xa0</nobr>"
+        return [Paragraph(text, style=qstyle)]
 
 class HandleLiteralBlock(NodeHandler, docutils.nodes.literal_block,
                                docutils.nodes.doctest_block):
@@ -698,27 +699,36 @@ class HandleLiteralBlock(NodeHandler, docutils.nodes.literal_block,
                 client.gather_pdftext(node, replaceEnt = True),
                                 style )]
 
+
 class HandleFigure(NodeHandler, docutils.nodes.figure):
     def gather_elements(self, client, node, style):
-        
+
         # Either use the figure style or the class 
         # selected by the user
         if node.get('classes'):
             style=client.styles[node.get('classes')[0]]
         cmd=getattr(style,'commands',[])
-        align=node.get('align','XXX')
-        if align != 'XXX':
-            for n in node.children:
-                n['align']=align
-            cmd.append(['ALIGN',[0,0],[-1,-1],align.upper()])
+        image=node.children[0]
+        if len(node.children) > 1:
+            caption = node.children[1]
         else:
-            # Figures are centered by default.
-            cmd.append(['ALIGN',[0,0],[-1,-1],'CENTER'])
-        cw=[client.styles.adjustUnits(x) for x in client.styles['figure'].colWidths]
+            caption=None
+
+        if len(node.children) > 2:
+            legend = node.children[2:]
+        else:
+            legend=[]
+
+        w=node.get('width',client.styles['figure'].colWidths[0])
+        cw=[w,]
         sub_elems = client.gather_elements(node, style=None)
         t_style=TableStyle(cmd)
-        return [DelayedTable([[e,] for e in sub_elems],style=t_style,
-            colWidths=cw)]
+        table = DelayedTable([[e,] for e in sub_elems],style=t_style,
+            colWidths=cw)
+        table.hAlign = node.get('align','CENTER').upper()
+        return [table]
+
+            
 class HandleCaption(NodeHandler, docutils.nodes.caption):
     def gather_elements(self, client, node, style):
         return [Paragraph(client.gather_pdftext(node),
@@ -777,6 +787,12 @@ class HandleFootnote(NodeHandler, docutils.nodes.footnote,
     def gather_elements(self, client, node, style):
         # It seems a footnote contains a label and a series of elements
         ltext = client.gather_pdftext(node.children[0])
+        label = None
+        ids=''
+        for i in node.get('ids',[]):
+            ids+='<a name="%s"/>'%(i)
+        client.targets.extend(node.get('ids',[ltext]))
+
         if len(node['backrefs']) > 1 and client.footnote_backlinks:
             backrefs = []
             i = 1
@@ -786,25 +802,25 @@ class HandleFootnote(NodeHandler, docutils.nodes.footnote,
                 i += 1
             backrefs = '(%s)' % ', '.join(backrefs)
             if ltext not in client.targets:
-                label = Paragraph('<a name="%s"/>%s'%(ltext,
-                                                    ltext + backrefs),
-                                client.styles["normal"])
+                label = Paragraph(ids+'%s'%(ltext + backrefs),
+                                client.styles["endnote"])
                 client.targets.append(ltext)
         elif len(node['backrefs'])==1 and client.footnote_backlinks:
             if ltext not in client.targets:
-                label = Paragraph('<a name="%s"/>'\
-                                '<a href="%s" color="%s">%s</a>' % (
-                                    ltext,
+                label = Paragraph(ids+'<a href="%s" color="%s">%s</a>' % (
                                     node['backrefs'][0],
                                     client.styles.linkColor,
-                                    ltext), client.styles["normal"])
+                                    ltext), client.styles["endnote"])
                 client.targets.append(ltext)
         else:
             if ltext not in client.targets:
-                label = Paragraph('<a name="%s"/>%s' % (ltext, ltext),
-                    client.styles["normal"])
+                label = Paragraph(ids+ltext,
+                    client.styles["endnote"])
                 client.targets.append(ltext)
-        contents = client.gather_elements(node, style)[1:]
+        if not label:
+            label = Paragraph(ids+ltext,
+                    client.styles["endnote"])
+        contents = client.gather_elements(node, client.styles["endnote"])[1:]
         if client.inline_footnotes:
             st=client.styles['endnote']
             t_style = TableStyle(st.commands)
@@ -833,7 +849,7 @@ class HandleRaw(NodeHandler, docutils.nodes.raw):
     def gather_elements(self, client, node, style):
         # Not really raw, but what the heck
         if node.get('format','NONE').lower()=='pdf':
-            return parseRaw(str(node.astext()))
+            return parseRaw(str(node.astext()), node)
         else:
             return []
 
@@ -842,10 +858,28 @@ class HandleOddEven (NodeHandler, OddEvenNode):
     def gather_elements(self, client, node, style):
         odd=[]
         even=[]
+        #from pudb import set_trace; set_trace()
         if node.children:
-            odd=client.gather_elements(node.children[0])
+            if isinstance (node.children[0], docutils.nodes.paragraph):
+                if node.children[0].get('classes'):
+                    s = client.styles[node.children[0].get('classes')[0]]
+                else:
+                    s = style
+                odd=[Paragraph(client.gather_pdftext(node.children[0]),
+                    s)]
+            else:
+                # A compound element
+                odd=client.gather_elements(node.children[0])
         if len(node.children)>1:
-            even=client.gather_elements(node.children[1])
+            if isinstance (node.children[1], docutils.nodes.paragraph):
+                if node.children[1].get('classes'):
+                    s = client.styles[node.children[1].get('classes')[0]]
+                else:
+                    s = style
+                even=[Paragraph(client.gather_pdftext(node.children[1]),
+                     s)]
+            else:
+                even=client.gather_elements(node.children[1])
 
         return [OddEven(odd=odd, even=even)]
 
